@@ -1116,6 +1116,7 @@ function renderSel() {
       <input type="range" id="cGain" min="0" max="2" step="0.01" value="${c.gain}" title="Double-click to reset">
       <span id="cGainDb">${db}</span>
       <span class="sep"></span>
+      <button id="cStems" title="Breaks this beat into 4 tracks: drums, bass and 808, melody, and vocals or tags. Then mute, cut or add effects to each part.">Split into stems</button>
       <button id="cHalf" title="If the beat sounds half a beat off from the grid or metronome, this moves it half a beat so they line up">Shift &frac12; beat</button>
       <button id="cTune" title="Auto-tune: pulls the singing onto the notes of the key. Adds the tuned version as a new take, so you can switch back.">Auto-tune</button>
       <button id="cSplit" title="Cut the clip in two at the playhead (S)">Split</button>
@@ -1133,6 +1134,7 @@ function renderSel() {
     gi.onchange = () => restartIfPlaying();
     gi.ondblclick = () => { c.gain = 1; renderSel(); draw(); };
     $('#cTune').onclick = () => openTune(s.t, c);
+    $('#cStems').onclick = () => splitStems(s.t, c);
     $('#cHalf').onclick = () => {
       pushUndo();
       const h = beatLen() / 2;

@@ -168,6 +168,97 @@ async function pullBeat(url) {
   return { buf, title };
 }
 
+/* ---------- stem splitter (Demucs on the host's graphics card) ---------- */
+/* Compressed stems arrive a few ms late (codec delay). Find the exact offset against the
+   original beat and trim it, so the parts line up sample for sample. */
+function alignStems(parts, orig) {
+  const sr = parts[0].buf.sampleRate;
+  if (orig.sampleRate !== sr) return;
+  const n = Math.min(orig.length, ...parts.map((p) => p.buf.length));
+  const a0 = Math.min(n - 1, Math.round(sr * 2)), len = Math.min(Math.round(sr * 4), n - a0 - 8000);
+  if (len < sr) return;
+  const o = orig.getChannelData(0), sum = new Float32Array(n);
+  for (const p of parts) { const d = p.buf.getChannelData(0); for (let i = 0; i < n; i++) sum[i] += d[i]; }
+  const corr = (lag, step) => {
+    let s = 0, aa = 0, bb = 0;
+    for (let i = a0; i < a0 + len; i += step) { const x = sum[i + lag] || 0, y = o[i]; s += x * y; aa += x * x; bb += y * y; }
+    return s / Math.sqrt(aa * bb || 1);
+  };
+  let best = 0, bv = -2;
+  for (let lag = -4000; lag <= 4000; lag += 8) { const v = corr(lag, 6); if (v > bv) { bv = v; best = lag; } }
+  for (let lag = best - 8; lag <= best + 8; lag++) { const v = corr(lag, 1); if (v > bv) { bv = v; best = lag; } }
+  if (!best || bv < 0.3) return;
+  for (const p of parts) {
+    const b = p.buf, out = AC.createBuffer(b.numberOfChannels, b.length, sr);
+    for (let c = 0; c < b.numberOfChannels; c++) {
+      const d = b.getChannelData(c), od = out.getChannelData(c);
+      if (best > 0) od.set(d.subarray(best)); else od.set(d.subarray(0, b.length + best), -best);
+    }
+    p.buf = out;
+  }
+}
+async function splitStems(t, c) {
+  const b = bufOf(c);
+  if (!b) return;
+  if (b.buffer.duration > 600) { toast('That audio is longer than 10 minutes. Split a beat, not a whole mix.'); return; }
+  await ensureCtx();
+  if (P) stop();
+  const src = b.buffer, chs = [src.getChannelData(0), src.getChannelData(src.numberOfChannels > 1 ? 1 : 0)];
+  let pack;
+  try {
+    if (AWAD.local) {
+      busy('Splitting into drums, bass, melody and vocals. About 20 to 40 seconds...');
+      const r = await fetch('/api/stems', { method: 'POST', body: encodeWav(chs, src.sampleRate) });
+      if (!r.ok) { let m = 'Splitting failed.'; try { m = (await r.json()).detail || m; } catch (e) { /* not json */ } throw new Error(m); }
+      pack = await r.arrayBuffer();
+    } else {
+      if (!AWAD.puller) throw new Error('The stem splitter is not set up on this site.');
+      let code = getCode();
+      if (!code) code = await askCode();
+      if (!code) throw new Error('You need the friend code to split beats.');
+      busy('Getting the beat ready to send...');
+      const mp3 = await encodeMp3(chs, src.sampleRate);
+      busy('Splitting into drums, bass, melody and vocals. About 30 to 60 seconds...');
+      let r;
+      try {
+        r = await fetch(AWAD.puller.replace(/\/$/, '') + '/stems', {
+          method: 'POST', headers: { 'X-Code': code, 'ngrok-skip-browser-warning': '1', 'Content-Type': 'application/octet-stream' }, body: mp3,
+        });
+      } catch (e) { throw new Error('The stem splitter is offline right now (it runs on the host PC). Try again later.'); }
+      if (r.status === 401) { setCode(''); throw new Error('That friend code did not work. Click Split into stems again to enter it.'); }
+      if (!r.ok) { let m = 'The stem splitter is offline right now. Try again later.'; try { m = (await r.json()).detail || m; } catch (e) { /* not json */ } throw new Error(m); }
+      setCode(code);
+      pack = await r.arrayBuffer();
+    }
+    busy('Loading the parts...');
+    const hl = new DataView(pack).getUint32(0, true);
+    const header = JSON.parse(new TextDecoder().decode(new Uint8Array(pack, 4, hl)));
+    let o = 4 + hl;
+    const parts = [];
+    for (const st of header.stems) {
+      const buf = await AC.decodeAudioData(pack.slice(o, o + st.size));
+      o += st.size;
+      parts.push({ st, buf });
+    }
+    alignStems(parts, src);
+    pushUndo();
+    const at = S.tracks.indexOf(t) + 1;
+    const names = { drums: 'Beat drums', bass: 'Beat bass', other: 'Beat melody', vocals: 'Beat vocals' };
+    const made = parts.map(({ st, buf }) => {
+      const id = nid('b'); addBuffer(id, buf);
+      const nt = newTrack(names[st.key] || st.name);
+      nt.clips.push({ id: nid('c'), bufs: [id], take: 0, start: c.start, offset: c.offset, dur: Math.min(c.dur, buf.duration - c.offset), fadeIn: c.fadeIn, fadeOut: c.fadeOut, gain: c.gain, name: st.name });
+      return nt;
+    });
+    S.tracks.splice(at, 0, ...made);
+    t.mute = true;
+    S.sel = null;
+    refreshAll();
+    toast('Split into 4 tracks: drums, bass and 808, melody, and vocals. The original beat is muted (its M button). Mute or delete any part you do not want, like Beat vocals to drop producer tags.', 10000);
+  } catch (e) { toast(e.message, 9000); }
+  unbusy();
+}
+
 /* ---------- song layout ---------- */
 const LAYOUTS = {
   rap: { label: 'Rap song', desc: 'Intro, Hook, Verse, Hook, Verse, Hook, Outro', parts: [['Intro', 4], ['Hook', 8], ['Verse', 16], ['Hook', 8], ['Verse', 16], ['Hook', 8], ['Outro', 4]] },
