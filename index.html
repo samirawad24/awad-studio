@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="description" content="Awad Studio: make beats, record vocals with auto-tune, and mix songs in your browser.">
+<title>Awad Studio</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">Awad Studio</div>
+  <div class="group proj">
+    <input id="projName" type="text" placeholder="Song name" spellcheck="false" title="Name of this project. It saves under this name.">
+    <button id="bSave" title="Save the project (Ctrl+S). It also saves by itself every minute.">Save</button>
+    <button id="bOpen" title="Open a saved project or start a new one">Open</button>
+  </div>
+
+  <div class="group transport">
+    <button id="bStop" class="ic" title="Stop (Space). Goes back to where you started.">
+      <svg viewBox="0 0 16 16"><rect x="3.5" y="3.5" width="9" height="9"/></svg></button>
+    <button id="bPlay" class="ic" title="Play (Space)">
+      <svg viewBox="0 0 16 16"><path d="M4.5 3v10l8-5z"/></svg></button>
+    <button id="bRec" class="ic rec" title="Record (R). Records on the track with the red dot turned on.">
+      <svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="4.5"/></svg></button>
+  </div>
+
+  <div class="readout" title="Bar . beat, and minutes:seconds">
+    <div id="tBars">1.1</div>
+    <div id="tClock">0:00.0</div>
+  </div>
+
+  <div class="group seg">
+    <button id="mPat" title="Pattern mode (P): plays only the pattern you are editing, on repeat">Pattern</button>
+    <button id="mSong" title="Song mode (P): plays the whole song from the playlist">Song</button>
+  </div>
+  <select id="patSel" title="The pattern you are editing. Double-click an empty spot on a track to place it in the song."></select>
+
+  <div class="group tempo">
+    <label for="bpm">BPM</label>
+    <input id="bpm" type="number" min="40" max="300" step="1" value="120" title="Song tempo in beats per minute">
+    <button id="bHalf" title="Half the tempo. Use it if the grid moves twice as fast as the beat.">&frac12;</button>
+    <button id="bDbl" title="Double the tempo. Use it if the grid moves half as fast as the beat.">&times;2</button>
+  </div>
+  <label class="keybox" title="The key of the song. Found automatically from a beat, used by scale lock, chords and auto-tune.">Key
+    <select id="keySel"></select></label>
+
+  <div class="group toggles">
+    <button class="tg" data-tg="metro" title="Plays a click on every beat so you stay on time. Not included when you export.">Metronome</button>
+    <button class="tg" data-tg="countIn" title="Gives you 4 clicks before recording starts.">Count-in</button>
+    <button class="tg" data-tg="loop" title="Repeats the marked section (drag across the ruler to mark one). Record with Loop on and every pass becomes a new take.">Loop</button>
+    <button class="tg" data-tg="punch" title="Re-record only the marked section. Plays one bar before it so you can get ready.">Punch</button>
+    <button id="bLiveTune" title="Hear yourself auto-tuned in your headphones while you sing. Click to switch between off, natural and hard. Uses the song key and your track's vocal preset.">Live tune: off</button>
+    <button class="tg" data-tg="snap" title="Clips line up with the beat when you move them. Hold Alt to move freely.">Snap</button>
+  </div>
+
+  <div class="fill"></div>
+  <div class="group">
+    <button id="bUndo" title="Undo (Ctrl+Z)">Undo</button>
+    <button id="bRedo" title="Redo (Ctrl+Y)">Redo</button>
+    <button id="bSettings" title="Microphone and delay settings">Settings</button>
+    <button id="bExport" class="primary" title="Save your song as an MP3 or WAV file">Export</button>
+    <canvas id="mmeter" width="90" height="10" title="Output level. Keep it out of the red."></canvas>
+  </div>
+</header>
+
+<div id="tuneInfo"></div>
+<div class="importbar">
+  <input id="ytUrl" type="url" placeholder="Paste a YouTube beat link" spellcheck="false">
+  <button id="bYt" class="primary">Get beat</button>
+  <button id="bFile" title="MP3, WAV, M4A and more. You can also drop files onto the tracks.">Add audio file</button>
+  <span class="sep"></span>
+  <button id="bStarter" title="Makes a full beat for you in the style you pick. Change anything after.">Starter beat</button>
+  <button id="bLayout" title="Marks Intro, Hook and Verse sections on the ruler so you know where everything goes">Layout</button>
+  <input id="fileIn" type="file" accept="audio/*,video/*" multiple hidden>
+  <div id="selbar"></div>
+</div>
+
+<main class="arr">
+  <div class="corner">
+    <button id="bAddTrack" title="Add another track">+ Track</button>
+    <span class="zoom">
+      <button id="bZoomOut" title="Zoom out (-)">&minus;</button>
+      <button id="bZoomIn" title="Zoom in (+)">+</button>
+    </span>
+  </div>
+  <canvas id="ruler" title="Click to move the playhead. Drag to mark a section. Click a section name to jump there."></canvas>
+  <div id="heads"></div>
+  <div id="lanes"><canvas id="cv"></canvas><div id="spacer"></div></div>
+</main>
+
+<section id="dock">
+  <div id="dockGrip" title="Drag to resize"></div>
+  <div id="rack" class="pane"></div>
+  <div id="roll" class="pane"></div>
+  <div id="mixer" class="pane"></div>
+</section>
+
+<footer class="tabs">
+  <button data-dock="rack" title="Make drum patterns (F6)">Channel rack</button>
+  <button data-dock="roll" title="Write melodies, chords and 808s (F7)">Piano roll</button>
+  <button data-dock="mixer" title="Volume, effects and vocal presets for each track (F9)">Mixer</button>
+  <span class="keys">
+    <span><b>Space</b> play</span><span><b>R</b> record</span><span><b>P</b> pattern/song</span><span><b>L</b> loop</span>
+    <span><b>S</b> split</span><span><b>Del</b> delete</span><span><b>Ctrl+Z</b> undo</span><span><b>Ctrl+S</b> save</span>
+    <span><b>Double-click a track</b> place pattern</span>
+  </span>
+</footer>
+
+<div id="toast" role="status"></div>
+<div id="tip"></div>
+<div id="busy"><div class="box"><div class="spin"></div><div id="busyMsg">Working...</div></div></div>
+
+<dialog id="dSettings">
+  <h2>Settings</h2>
+  <label class="field">Microphone
+    <select id="micSel"><option value="">Default microphone</option></select>
+  </label>
+  <label class="check"><input type="checkbox" id="chkMonitor"> Hear myself in the headphones while recording
+    <small>Adds a tiny delay. Leave off if it feels weird.</small></label>
+  <label class="check"><input type="checkbox" id="chkRecTuned"> Record with the live tune
+    <small>Off (best): you hear the tune but the take records clean, so you can use the better Auto-tune on it after. On: the take records exactly what you hear.</small></label>
+  <label class="check"><input type="checkbox" id="chkNoise"> Reduce background noise
+    <small>Helps with fans and room noise. Can make your voice slightly duller.</small></label>
+  <div class="field">
+    <div>Recording delay fix</div>
+    <small>Every computer adds a small delay between hearing the beat and recording your voice. The studio moves your takes back by this amount so they land on the beat.</small>
+    <div class="latrow">
+      <input id="latMs" type="number" min="0" max="800" step="1"> ms
+      <button id="bLatAuto">Use automatic</button>
+      <button id="bTap" class="primary">Run tap test</button>
+    </div>
+    <small id="latInfo"></small>
+    <small id="tapRes"></small>
+  </div>
+  <div class="dlg-actions"><button id="bCloseSettings" class="primary">Done</button></div>
+</dialog>
+
+<dialog id="dExport">
+  <h2>Export song</h2>
+  <label class="field">Song name <input id="expName" type="text" value="My song"></label>
+  <label class="field">Format
+    <select id="expFmt"><option value="mp3">MP3 (small, for phones and sharing)</option><option value="wav">WAV (full quality)</option></select>
+  </label>
+  <label class="field">What to export
+    <select id="expRange"><option value="all">Whole song</option><option value="loop">Only the marked section</option></select>
+  </label>
+  <small>The metronome is never included. Muted tracks are left out. Turn on Auto master in the Mixer for a louder, finished sound.</small>
+  <div class="dlg-actions"><button id="bExpCancel">Cancel</button><button id="bExpGo" class="primary">Export</button></div>
+</dialog>
+
+<dialog id="dStarter">
+  <h2>Starter beat</h2>
+  <p class="lead">Pick a style. You get drums, an 808 and a melody in the song key, placed in the song for 8 bars. Change anything you want after.</p>
+  <div class="choices" id="starterChoices"></div>
+  <label class="field">Key
+    <select id="starterKey"></select>
+  </label>
+  <div class="dlg-actions"><button id="bStarterCancel">Cancel</button></div>
+</dialog>
+
+<dialog id="dLayout">
+  <h2>Song layout</h2>
+  <p class="lead">Marks the parts of a song on the ruler. Click a part name on the ruler to jump to it.</p>
+  <div class="choices" id="layoutChoices"></div>
+  <label class="check"><input type="checkbox" id="chkArrange" checked> Also arrange my patterns into these parts
+    <small>Intro and outro get the melody only, hooks get everything. Uses the patterns on the Drums, 808 and Melody tracks.</small></label>
+  <div class="dlg-actions"><button id="bLayoutClear">Remove layout</button><button id="bLayoutCancel">Cancel</button></div>
+</dialog>
+
+<dialog id="dChords">
+  <h2>Chord helper</h2>
+  <p class="lead">Pick a mood. Four chords in the song key go into this pattern for the selected instrument, one chord per bar.</p>
+  <div class="choices" id="moodChoices"></div>
+  <label class="check"><input type="checkbox" id="chkChord808" checked> Also add an 808 bassline that follows the chords</label>
+  <div class="dlg-actions"><button id="bChordsCancel">Cancel</button></div>
+</dialog>
+
+<dialog id="dTune">
+  <h2>Auto-tune</h2>
+  <p class="lead">Pulls your singing onto the notes of the key. The tuned version is added as a new take, so you can switch back with the Take arrows.</p>
+  <label class="field">Key <select id="tuneKey"></select></label>
+  <label class="field">Style
+    <select id="tuneStyle"><option value="natural">Natural (gentle fix, still sounds like you)</option><option value="hard">Hard (the robotic trap sound)</option></select>
+  </label>
+  <div class="dlg-actions"><button id="bTuneCancel">Cancel</button><button id="bTuneGo" class="primary">Tune it</button></div>
+</dialog>
+
+<dialog id="dCode">
+  <h2>Friend code</h2>
+  <p class="lead">Pulling beats from YouTube needs the friend code. Ask whoever sent you this link.</p>
+  <label class="field">Code <input id="codeIn" type="text" spellcheck="false" autocomplete="off"></label>
+  <div class="dlg-actions"><button id="bCodeCancel">Cancel</button><button id="bCodeOk" class="primary">OK</button></div>
+</dialog>
+
+<dialog id="dOpen">
+  <h2>Projects</h2>
+  <div id="projList" class="projlist"></div>
+  <div class="dlg-actions" style="justify-content:flex-start">
+    <button id="bImportProj" title="Open a .awad project file someone sent you">Open project file</button>
+    <button id="bExportProj" title="Download this project as one file, to back it up or send to a friend">Download project file</button>
+  </div>
+  <div class="dlg-actions"><button id="bNewProj">New empty project</button><button id="bOpenCancel">Close</button></div>
+</dialog>
+
+<script src="config.js"></script>
+<script src="vendor/lame.min.js"></script>
+<script src="sounds.js"></script>
+<script src="analyze.js"></script>
+<script src="app.js"></script>
+<script src="rack.js"></script>
+<script src="mixer.js"></script>
+<script src="store.js"></script>
+<script src="project.js"></script>
+</body>
+</html>
